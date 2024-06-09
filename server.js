@@ -2,15 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const dotenv = require('dotenv');
-
-dotenv.config();
 
 const app = express();
 
 // MongoDB connection
-const mongoURI = process.env.MONGODB_URI;
-mongoose.connect(mongoURI).then(() => {
+const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/goatvote';
+mongoose.connect(mongoURI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+}).then(() => {
     console.log('Connected to MongoDB');
 }).catch(err => {
     console.error('Error connecting to MongoDB', err);
@@ -23,6 +23,14 @@ const voteSchema = new mongoose.Schema({
 });
 
 const Vote = mongoose.model('Vote', voteSchema);
+
+// User schema and model to track who voted
+const userSchema = new mongoose.Schema({
+    name: String,
+    hasVoted: { type: Boolean, default: false }
+});
+
+const User = mongoose.model('User', userSchema);
 
 // Middleware
 app.use(cors());
@@ -47,12 +55,29 @@ initializeVotes();
 
 // Routes
 app.post('/vote', async (req, res) => {
-    const { player } = req.body;
+    const { player, userName } = req.body;
+
+    // Check if the user has already voted
+    const user = await User.findOne({ name: userName });
+    if (user && user.hasVoted) {
+        return res.status(400).send({ message: 'You have already voted' });
+    }
+
+    // Record the vote
     const vote = await Vote.findOne({ player });
     if (vote) {
         vote.count++;
         await vote.save();
     }
+
+    // Update user vote status
+    if (user) {
+        user.hasVoted = true;
+        await user.save();
+    } else {
+        await new User({ name: userName, hasVoted: true }).save();
+    }
+
     res.send({ message: 'Vote recorded' });
 });
 
